@@ -1,6 +1,7 @@
 /* A simple event-driven programming library. Originally I wrote this code
  * for the Jim's event-loop (Jim is a Tcl interpreter) but later translated
  * it in form of a library for easy reuse.
+ * 事件驱动库
  *
  * Copyright (c) 2006-2012, Salvatore Sanfilippo <antirez at gmail dot com>
  * All rights reserved.
@@ -38,15 +39,15 @@
 #define AE_OK 0
 #define AE_ERR -1
 
-#define AE_NONE 0
-#define AE_READABLE 1
-#define AE_WRITABLE 2
+#define AE_NONE 0 //
+#define AE_READABLE 1 //掩码-可读
+#define AE_WRITABLE 2 //掩码-可写
 
-#define AE_FILE_EVENTS 1
-#define AE_TIME_EVENTS 2
-#define AE_ALL_EVENTS (AE_FILE_EVENTS|AE_TIME_EVENTS)
-#define AE_DONT_WAIT 4
-#define AE_CALL_AFTER_SLEEP 8
+#define AE_FILE_EVENTS 1 // 文件事件
+#define AE_TIME_EVENTS 2 // 时间事件
+#define AE_ALL_EVENTS (AE_FILE_EVENTS|AE_TIME_EVENTS) // 所有事件,包括文件和时间
+#define AE_DONT_WAIT 4 // 不等待
+#define AE_CALL_AFTER_SLEEP 8 //Sleep一段时间再唤醒
 
 #define AE_NOMORE -1
 #define AE_DELETED_EVENT_ID -1
@@ -62,26 +63,26 @@ typedef int aeTimeProc(struct aeEventLoop *eventLoop, long long id, void *client
 typedef void aeEventFinalizerProc(struct aeEventLoop *eventLoop, void *clientData);
 typedef void aeBeforeSleepProc(struct aeEventLoop *eventLoop);
 
-/* File event structure */
+/* File event structure 文件事件结构*/
 typedef struct aeFileEvent {
-    int mask; /* one of AE_(READABLE|WRITABLE) */
-    aeFileProc *rfileProc;
-    aeFileProc *wfileProc;
-    void *clientData;
+    int mask; /* one of AE_(READABLE|WRITABLE)  掩码-读或写 */
+    aeFileProc *rfileProc;// 读文件操作回调
+    aeFileProc *wfileProc;// 写文件操作回调
+    void *clientData; //数据
 } aeFileEvent;
 
-/* Time event structure */
+/* Time event structure 时间事件结构 */
 typedef struct aeTimeEvent {
-    long long id; /* time event identifier. */
-    long when_sec; /* seconds */
-    long when_ms; /* milliseconds */
-    aeTimeProc *timeProc;
+    long long id; /* time event identifier. 唯一标识*/
+    long when_sec; /* seconds 秒时间*/
+    long when_ms; /* milliseconds 微秒时间*/
+    aeTimeProc *timeProc; //处理回调
     aeEventFinalizerProc *finalizerProc;
     void *clientData;
-    struct aeTimeEvent *next;
+    struct aeTimeEvent *next;//指向下一个时间事件的指针
 } aeTimeEvent;
 
-/* A fired event */
+/* A fired event 已经触发的时间*/
 typedef struct aeFiredEvent {
     int fd;
     int mask;
@@ -89,38 +90,53 @@ typedef struct aeFiredEvent {
 
 /* State of an event based program */
 typedef struct aeEventLoop {
-    int maxfd;   /* highest file descriptor currently registered */
-    int setsize; /* max number of file descriptors tracked */
-    long long timeEventNextId;
-    time_t lastTime;     /* Used to detect system clock skew */
-    aeFileEvent *events; /* Registered events */
-    aeFiredEvent *fired; /* Fired events */
+    int maxfd;   /* highest file descriptor currently registered  最大文件描述符*/
+    int setsize; /* max number of file descriptors tracked 文件描述符的最大监听数目 */
+    long long timeEventNextId; // 时间事件的唯一ID
+    time_t lastTime;     /* Used to detect system clock skew 用于修正系统时间*/
+    aeFileEvent *events; /* Registered events 已经注册的文件事件*/
+    aeFiredEvent *fired; /* Fired events 以触发的文件事件*/
     aeTimeEvent *timeEventHead;
     int stop;
     void *apidata; /* This is used for polling API specific data */
-    aeBeforeSleepProc *beforesleep;
-    aeBeforeSleepProc *aftersleep;
+    aeBeforeSleepProc *beforesleep; //Sleep之前调用的回调
+    aeBeforeSleepProc *aftersleep; //Sleep之后调用的回调
 } aeEventLoop;
 
 /* Prototypes */
+// 创建事件循环
 aeEventLoop *aeCreateEventLoop(int setsize);
+// 删除事件循环
 void aeDeleteEventLoop(aeEventLoop *eventLoop);
+// 暂停事件循环
 void aeStop(aeEventLoop *eventLoop);
+// 创建文件事件
 int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
         aeFileProc *proc, void *clientData);
+// 删除文件事件
 void aeDeleteFileEvent(aeEventLoop *eventLoop, int fd, int mask);
+// 从事件循环中取出指定的一个文件事件
 int aeGetFileEvents(aeEventLoop *eventLoop, int fd);
+// 创建时间事件
 long long aeCreateTimeEvent(aeEventLoop *eventLoop, long long milliseconds,
         aeTimeProc *proc, void *clientData,
         aeEventFinalizerProc *finalizerProc);
+// 删除文件事件
 int aeDeleteTimeEvent(aeEventLoop *eventLoop, long long id);
+// 处理事件
 int aeProcessEvents(aeEventLoop *eventLoop, int flags);
+// 等待
 int aeWait(int fd, int mask, long long milliseconds);
+// 主函数
 void aeMain(aeEventLoop *eventLoop);
 char *aeGetApiName(void);
+// set事件循环Sleep前的回调
 void aeSetBeforeSleepProc(aeEventLoop *eventLoop, aeBeforeSleepProc *beforesleep);
+// set事件循环Sleep后的回调
 void aeSetAfterSleepProc(aeEventLoop *eventLoop, aeBeforeSleepProc *aftersleep);
+// 取事件循环的个数
 int aeGetSetSize(aeEventLoop *eventLoop);
+// Resize事件循环的个数
 int aeResizeSetSize(aeEventLoop *eventLoop, int setsize);
 
 #endif
