@@ -65,7 +65,7 @@ typedef void aeBeforeSleepProc(struct aeEventLoop *eventLoop);
 
 /* File event structure 文件事件结构*/
 typedef struct aeFileEvent {
-    int mask; /* one of AE_(READABLE|WRITABLE)  掩码-读或写 */
+    int mask; /* one of AE_(READABLE|WRITABLE)  掩码-读或写 AE_NONE标记为Delete*/
     aeFileProc *rfileProc;// 读文件操作回调
     aeFileProc *wfileProc;// 写文件操作回调
     void *clientData; //数据
@@ -73,11 +73,11 @@ typedef struct aeFileEvent {
 
 /* Time event structure 时间事件结构 */
 typedef struct aeTimeEvent {
-    long long id; /* time event identifier. 唯一标识*/
+    long long id; /* time event identifier. 唯一标识 AE_DELETED_EVENT_ID标记为Delete*/
     long when_sec; /* seconds 秒时间*/
     long when_ms; /* milliseconds 微秒时间*/
     aeTimeProc *timeProc; //处理回调
-    aeEventFinalizerProc *finalizerProc;
+    aeEventFinalizerProc *finalizerProc;//时间事件的清理回调
     void *clientData;
     struct aeTimeEvent *next;//指向下一个时间事件的指针
 } aeTimeEvent;
@@ -90,14 +90,14 @@ typedef struct aeFiredEvent {
 
 /* State of an event based program */
 typedef struct aeEventLoop {
-    int maxfd;   /* highest file descriptor currently registered  最大文件描述符*/
-    int setsize; /* max number of file descriptors tracked 文件描述符的最大监听数目 */
+    int maxfd;   /* highest file descriptor currently registered  最大的文件描述符*/
+    int setsize; /* max number of file descriptors tracked 最大文件事件个数 */
     long long timeEventNextId; // 时间事件的唯一ID
     time_t lastTime;     /* Used to detect system clock skew 用于修正系统时间*/
     aeFileEvent *events; /* Registered events 已经注册的文件事件*/
     aeFiredEvent *fired; /* Fired events 以触发的文件事件*/
-    aeTimeEvent *timeEventHead;
-    int stop;
+    aeTimeEvent *timeEventHead;// 时间事件链表
+    int stop;// 1表示停止事件循环
     void *apidata; /* This is used for polling API specific data */
     aeBeforeSleepProc *beforesleep; //Sleep之前调用的回调
     aeBeforeSleepProc *aftersleep; //Sleep之后调用的回调
