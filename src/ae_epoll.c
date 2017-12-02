@@ -33,9 +33,10 @@
 
 typedef struct aeApiState {
     int epfd;
-    struct epoll_event *events;
+    struct epoll_event *events;// epoll事件链表
 } aeApiState;
 
+// Create aeApi，主要作用是初始化事件循环的apidata
 static int aeApiCreate(aeEventLoop *eventLoop) {
     aeApiState *state = zmalloc(sizeof(aeApiState));
 
@@ -74,12 +75,14 @@ static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
     aeApiState *state = eventLoop->apidata;
     struct epoll_event ee = {0}; /* avoid valgrind warning */
     /* If the fd was already monitored for some event, we need a MOD
-     * operation. Otherwise we need an ADD operation. */
+     * operation. Otherwise we need an ADD operation. 
+	 * 若事件的掩码已经存在，则为修改操作，否则增加操作
+	 */
     int op = eventLoop->events[fd].mask == AE_NONE ?
             EPOLL_CTL_ADD : EPOLL_CTL_MOD;
 
     ee.events = 0;
-    mask |= eventLoop->events[fd].mask; /* Merge old events */
+    mask |= eventLoop->events[fd].mask; /* Merge old events  合并旧事件的掩码*/
     if (mask & AE_READABLE) ee.events |= EPOLLIN;
     if (mask & AE_WRITABLE) ee.events |= EPOLLOUT;
     ee.data.fd = fd;
@@ -90,15 +93,15 @@ static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
 static void aeApiDelEvent(aeEventLoop *eventLoop, int fd, int delmask) {
     aeApiState *state = eventLoop->apidata;
     struct epoll_event ee = {0}; /* avoid valgrind warning */
-    int mask = eventLoop->events[fd].mask & (~delmask);
+    int mask = eventLoop->events[fd].mask & (~delmask);// 根据掩码来删除事件
 
     ee.events = 0;
     if (mask & AE_READABLE) ee.events |= EPOLLIN;
     if (mask & AE_WRITABLE) ee.events |= EPOLLOUT;
     ee.data.fd = fd;
-    if (mask != AE_NONE) {
+    if (mask != AE_NONE) {//事件掩码不是AE_NONE，则修改
         epoll_ctl(state->epfd,EPOLL_CTL_MOD,fd,&ee);
-    } else {
+    } else {//否则删除事件
         /* Note, Kernel < 2.6.9 requires a non null event pointer even for
          * EPOLL_CTL_DEL. */
         epoll_ctl(state->epfd,EPOLL_CTL_DEL,fd,&ee);
@@ -108,7 +111,8 @@ static void aeApiDelEvent(aeEventLoop *eventLoop, int fd, int delmask) {
 static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
     aeApiState *state = eventLoop->apidata;
     int retval, numevents = 0;
-
+	
+	// 等待事件触发
     retval = epoll_wait(state->epfd,state->events,eventLoop->setsize,
             tvp ? (tvp->tv_sec*1000 + tvp->tv_usec/1000) : -1);
     if (retval > 0) {
