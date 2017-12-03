@@ -1,4 +1,5 @@
 /* anet.c -- Basic TCP socket stuff made a bit less boring
+ * 基本的TCP socket通讯封装
  *
  * Copyright (c) 2006-2012, Salvatore Sanfilippo <antirez at gmail dot com>
  * All rights reserved.
@@ -48,6 +49,7 @@
 
 #include "anet.h"
 
+// set 错误信息
 static void anetSetError(char *err, const char *fmt, ...)
 {
     va_list ap;
@@ -58,44 +60,50 @@ static void anetSetError(char *err, const char *fmt, ...)
     va_end(ap);
 }
 
+// set socket的阻塞属性
 int anetSetBlock(char *err, int fd, int non_block) {
     int flags;
 
     /* Set the socket blocking (if non_block is zero) or non-blocking.
      * Note that fcntl(2) for F_GETFL and F_SETFL can't be
      * interrupted by a signal. */
-    if ((flags = fcntl(fd, F_GETFL)) == -1) {
+    if ((flags = fcntl(fd, F_GETFL)) == -1) {// 先取已有的flags
         anetSetError(err, "fcntl(F_GETFL): %s", strerror(errno));
         return ANET_ERR;
     }
 
     if (non_block)
-        flags |= O_NONBLOCK;
+        flags |= O_NONBLOCK;// 阻塞
     else
-        flags &= ~O_NONBLOCK;
+        flags &= ~O_NONBLOCK;// 非阻塞
 
-    if (fcntl(fd, F_SETFL, flags) == -1) {
+    if (fcntl(fd, F_SETFL, flags) == -1) {// set flag
         anetSetError(err, "fcntl(F_SETFL,O_NONBLOCK): %s", strerror(errno));
         return ANET_ERR;
     }
     return ANET_OK;
 }
 
+// socket非阻塞
 int anetNonBlock(char *err, int fd) {
     return anetSetBlock(err,fd,1);
 }
 
+// socket阻塞
 int anetBlock(char *err, int fd) {
     return anetSetBlock(err,fd,0);
 }
 
 /* Set TCP keep alive option to detect dead peers. The interval option
  * is only used for Linux as we are using Linux-specific APIs to set
- * the probe send time, interval, and count. */
+ * the probe send time, interval, and count. 
+ * set keep alive选项.入参interval仅给Linux使用
+ */
 int anetKeepAlive(char *err, int fd, int interval)
 {
     int val = 1;
-
+	
+	// 启用keep-alive
     if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &val, sizeof(val)) == -1)
     {
         anetSetError(err, "setsockopt SO_KEEPALIVE: %s", strerror(errno));
@@ -108,6 +116,7 @@ int anetKeepAlive(char *err, int fd, int interval)
      * actually useful. */
 
     /* Send first probe after interval. */
+	// 设置对一个连接进行有效性探测之前的最大非活跃事件间隔
     val = interval;
     if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &val, sizeof(val)) < 0) {
         anetSetError(err, "setsockopt TCP_KEEPIDLE: %s\n", strerror(errno));
@@ -116,7 +125,9 @@ int anetKeepAlive(char *err, int fd, int interval)
 
     /* Send next probes after the specified interval. Note that we set the
      * delay as interval / 3, as we send three probes before detecting
-     * an error (see the next setsockopt call). */
+     * an error (see the next setsockopt call). 
+	 * 设置两个探测的时间间隔
+	 */
     val = interval/3;
     if (val == 0) val = 1;
     if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &val, sizeof(val)) < 0) {
@@ -125,7 +136,9 @@ int anetKeepAlive(char *err, int fd, int interval)
     }
 
     /* Consider the socket in error state after three we send three ACK
-     * probes without getting a reply. */
+     * probes without getting a reply. 
+	 * 设置关闭一个非活跃连接之前的最大探测次数
+	 */
     val = 3;
     if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &val, sizeof(val)) < 0) {
         anetSetError(err, "setsockopt TCP_KEEPCNT: %s\n", strerror(errno));
@@ -138,6 +151,7 @@ int anetKeepAlive(char *err, int fd, int interval)
     return ANET_OK;
 }
 
+// 是否启用nagle算法,val为1启用,0关闭
 static int anetSetTcpNoDelay(char *err, int fd, int val)
 {
     if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val)) == -1)
@@ -148,17 +162,19 @@ static int anetSetTcpNoDelay(char *err, int fd, int val)
     return ANET_OK;
 }
 
+// 启用nagle算法
 int anetEnableTcpNoDelay(char *err, int fd)
 {
     return anetSetTcpNoDelay(err, fd, 1);
 }
 
+// 不启用nagle算法
 int anetDisableTcpNoDelay(char *err, int fd)
 {
     return anetSetTcpNoDelay(err, fd, 0);
 }
 
-
+// set发送缓冲区的大小
 int anetSetSendBuffer(char *err, int fd, int buffsize)
 {
     if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &buffsize, sizeof(buffsize)) == -1)
@@ -180,7 +196,9 @@ int anetTcpKeepAlive(char *err, int fd)
 }
 
 /* Set the socket send timeout (SO_SNDTIMEO socket option) to the specified
- * number of milliseconds, or disable it if the 'ms' argument is zero. */
+ * number of milliseconds, or disable it if the 'ms' argument is zero. 
+ *  设置发送超时时间
+ */
 int anetSendTimeout(char *err, int fd, long long ms) {
     struct timeval tv;
 
@@ -200,6 +218,7 @@ int anetSendTimeout(char *err, int fd, long long ms) {
  * If flags is set to ANET_IP_ONLY the function only resolves hostnames
  * that are actually already IPv4 or IPv6 addresses. This turns the function
  * into a validating / normalizing function. */
+ // 解析host主机名或ip地址
 int anetGenericResolve(char *err, char *host, char *ipbuf, size_t ipbuf_len,
                        int flags)
 {
@@ -235,6 +254,7 @@ int anetResolveIP(char *err, char *host, char *ipbuf, size_t ipbuf_len) {
     return anetGenericResolve(err,host,ipbuf,ipbuf_len,ANET_IP_ONLY);
 }
 
+// socket描述符重用
 static int anetSetReuseAddr(char *err, int fd) {
     int yes = 1;
     /* Make sure connection-intensive things like the redis benckmark
@@ -246,6 +266,7 @@ static int anetSetReuseAddr(char *err, int fd) {
     return ANET_OK;
 }
 
+// 创建一个socket
 static int anetCreateSocket(char *err, int domain) {
     int s;
     if ((s = socket(domain, SOCK_STREAM, 0)) == -1) {
