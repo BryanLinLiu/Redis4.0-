@@ -151,7 +151,7 @@ int anetKeepAlive(char *err, int fd, int interval)
     return ANET_OK;
 }
 
-// 是否启用nagle算法,val为1启用,0关闭
+// 是否启用nagle算法,val为1不启用,0启用
 static int anetSetTcpNoDelay(char *err, int fd, int val)
 {
     if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val)) == -1)
@@ -162,13 +162,13 @@ static int anetSetTcpNoDelay(char *err, int fd, int val)
     return ANET_OK;
 }
 
-// 启用nagle算法
+// 不启用nagle算法
 int anetEnableTcpNoDelay(char *err, int fd)
 {
     return anetSetTcpNoDelay(err, fd, 1);
 }
 
-// 不启用nagle算法
+// 启用nagle算法
 int anetDisableTcpNoDelay(char *err, int fd)
 {
     return anetSetTcpNoDelay(err, fd, 0);
