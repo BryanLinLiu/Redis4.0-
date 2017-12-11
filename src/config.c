@@ -135,13 +135,14 @@ const char *evictPolicyToString(void) {
 /*-----------------------------------------------------------------------------
  * Config file parsing
  *----------------------------------------------------------------------------*/
-
+/* yes/no转为1/0，其他-1 */
 int yesnotoi(char *s) {
     if (!strcasecmp(s,"yes")) return 1;
     else if (!strcasecmp(s,"no")) return 0;
     else return -1;
 }
 
+/* 追加server save参数 */
 void appendServerSaveParams(time_t seconds, int changes) {
     server.saveparams = zrealloc(server.saveparams,sizeof(struct saveparam)*(server.saveparamslen+1));
     server.saveparams[server.saveparamslen].seconds = seconds;
@@ -149,12 +150,14 @@ void appendServerSaveParams(time_t seconds, int changes) {
     server.saveparamslen++;
 }
 
+/* 重置server save参数*/
 void resetServerSaveParams(void) {
     zfree(server.saveparams);
     server.saveparams = NULL;
     server.saveparamslen = 0;
 }
 
+/*  */
 void queueLoadModule(sds path, sds *argv, int argc) {
     int i;
     struct moduleLoadQueueEntry *loadmod;
@@ -169,12 +172,14 @@ void queueLoadModule(sds path, sds *argv, int argc) {
     listAddNodeTail(server.loadmodule_queue,loadmod);
 }
 
+/* 从字符串中加载server配置 */
 void loadServerConfigFromString(char *config) {
     char *err = NULL;
     int linenum = 0, totlines, i;
     int slaveof_linenum = 0;
     sds *lines;
-
+    
+	// 按行分割字符串
     lines = sdssplitlen(config,strlen(config),"\n",1,&totlines);
 
     for (i = 0; i < totlines; i++) {
@@ -757,7 +762,9 @@ loaderr:
  *
  * Both filename and options can be NULL, in such a case are considered
  * empty. This way loadServerConfig can be used to just load a file or
- * just load a string. */
+ * just load a string. 
+ * 从文件和options中加载配置
+ */
 void loadServerConfig(char *filename, char *options) {
     sds config = sdsempty();
     char buf[CONFIG_MAX_LINE+1];
@@ -822,6 +829,7 @@ void loadServerConfig(char *filename, char *options) {
 
 #define config_set_else } else
 
+/* 根据client命令设置配置 */
 void configSetCommand(client *c) {
     robj *o;
     long long ll;
@@ -1200,6 +1208,7 @@ badfmt: /* Bad format errors */
     } \
 } while(0);
 
+/* 获取当前配置，返回给client */
 void configGetCommand(client *c) {
     robj *o = c->argv[2];
     void *replylen = addDeferredMultiBulkLength(c);
@@ -1450,23 +1459,28 @@ dictType optionSetDictType = {
     NULL                        /* val destructor */
 };
 
-/* The config rewrite state. */
+/* The config rewrite state. 配置重写的状态*/
 struct rewriteConfigState {
+	// 
     dict *option_to_line; /* Option -> list of config file lines map */
-    dict *rewritten;      /* Dictionary of already processed options */
-    int numlines;         /* Number of lines in current config */
-    sds *lines;           /* Current lines as an array of sds strings */
-    int has_tail;         /* True if we already added directives that were
+    // 
+	dict *rewritten;      /* Dictionary of already processed options */
+    // 当前配置的行数
+	int numlines;         /* Number of lines in current config */
+    //
+	sds *lines;           /* Current lines as an array of sds strings */
+    // 
+	int has_tail;         /* True if we already added directives that were
                              not present in the original config file. */
 };
 
-/* Append the new line to the current configuration state. */
+/* Append the new line to the current configuration state. 添加一行配置*/
 void rewriteConfigAppendLine(struct rewriteConfigState *state, sds line) {
     state->lines = zrealloc(state->lines, sizeof(char*) * (state->numlines+1));
     state->lines[state->numlines++] = line;
 }
 
-/* Populate the option -> list of line numbers map. */
+/* Populate the option -> list of line numbers map. 添加字典line-option*/
 void rewriteConfigAddLineNumberToOption(struct rewriteConfigState *state, sds option, int linenum) {
     list *l = dictFetchValue(state->option_to_line,option);
 
@@ -1480,7 +1494,9 @@ void rewriteConfigAddLineNumberToOption(struct rewriteConfigState *state, sds op
 /* Add the specified option to the set of processed options.
  * This is useful as only unused lines of processed options will be blanked
  * in the config file, while options the rewrite process does not understand
- * remain untouched. */
+ * remain untouched. 
+ * 重写 rewriteConfigState的option选项
+ */
 void rewriteConfigMarkAsProcessed(struct rewriteConfigState *state, const char *option) {
     sds opt = sdsnew(option);
 
@@ -1489,9 +1505,10 @@ void rewriteConfigMarkAsProcessed(struct rewriteConfigState *state, const char *
 
 /* Read the old file, split it into lines to populate a newly created
  * config rewrite state, and return it to the caller.
- *
+ * 读取老的配置文件
  * If it is impossible to read the old file, NULL is returned.
- * If the old file does not exist at all, an empty state is returned. */
+ * If the old file does not exist at all, an empty state is returned. 
+ */
 struct rewriteConfigState *rewriteConfigReadOldFile(char *path) {
     FILE *fp = fopen(path,"r");
     struct rewriteConfigState *state = zmalloc(sizeof(*state));
@@ -1515,7 +1532,7 @@ struct rewriteConfigState *rewriteConfigReadOldFile(char *path) {
 
         linenum++; /* Zero based, so we init at -1 */
 
-        /* Handle comments and empty lines. */
+        /* Handle comments and empty lines.  注释和空行*/
         if (line[0] == '#' || line[0] == '\0') {
             if (!state->has_tail && !strcmp(line,REDIS_CONFIG_REWRITE_SIGNATURE))
                 state->has_tail = 1;
@@ -1553,7 +1570,7 @@ struct rewriteConfigState *rewriteConfigReadOldFile(char *path) {
  * It progressively uses lines of the file that were already used for the same
  * configuration option in the old version of the file, removing that line from
  * the map of options -> line numbers.
- *
+ * 是否强制覆盖配置
  * If there are lines associated with a given configuration option and
  * "force" is non-zero, the line is appended to the configuration file.
  * Usually "force" is true when an option has not its default value, so it
@@ -1601,7 +1618,9 @@ void rewriteConfigRewriteLine(struct rewriteConfigState *state, const char *opti
 }
 
 /* Write the long long 'bytes' value as a string in a way that is parsable
- * inside redis.conf. If possible uses the GB, MB, KB notation. */
+ * inside redis.conf. If possible uses the GB, MB, KB notation. 
+ * 格式化bytes的大小 
+ */
 int rewriteConfigFormatMemory(char *buf, size_t len, long long bytes) {
     int gb = 1024*1024*1024;
     int mb = 1024*1024;
@@ -1618,7 +1637,7 @@ int rewriteConfigFormatMemory(char *buf, size_t len, long long bytes) {
     }
 }
 
-/* Rewrite a simple "option-name <bytes>" configuration option. */
+/* Rewrite a simple "option-name <bytes>" configuration option. 写入bytes的配置*/
 void rewriteConfigBytesOption(struct rewriteConfigState *state, char *option, long long value, long long defvalue) {
     char buf[64];
     int force = value != defvalue;
@@ -1629,7 +1648,7 @@ void rewriteConfigBytesOption(struct rewriteConfigState *state, char *option, lo
     rewriteConfigRewriteLine(state,option,line,force);
 }
 
-/* Rewrite a yes/no option. */
+/* Rewrite a yes/no option. 写入yes/no的配置*/
 void rewriteConfigYesNoOption(struct rewriteConfigState *state, char *option, int value, int defvalue) {
     int force = value != defvalue;
     sds line = sdscatprintf(sdsempty(),"%s %s",option,
@@ -1638,7 +1657,7 @@ void rewriteConfigYesNoOption(struct rewriteConfigState *state, char *option, in
     rewriteConfigRewriteLine(state,option,line,force);
 }
 
-/* Rewrite a string option. */
+/* Rewrite a string option. 写入string的配置*/
 void rewriteConfigStringOption(struct rewriteConfigState *state, char *option, char *value, char *defvalue) {
     int force = 1;
     sds line;
@@ -1809,7 +1828,9 @@ void rewriteConfigBindOption(struct rewriteConfigState *state) {
 }
 
 /* Glue together the configuration lines in the current configuration
- * rewrite state into a single string, stripping multiple empty lines. */
+ * rewrite state into a single string, stripping multiple empty lines. 
+ * 获取配置字符串
+ */
 sds rewriteConfigGetContentFromState(struct rewriteConfigState *state) {
     sds content = sdsempty();
     int j, was_empty = 0;
@@ -1841,7 +1862,7 @@ void rewriteConfigReleaseState(struct rewriteConfigState *state) {
  * Lines used by the rewrite process were removed by the function
  * rewriteConfigRewriteLine(), all the other lines are "orphaned" and
  * should be replaced by empty lines.
- *
+ * 置空配置的lines
  * This function does just this, iterating all the option names and
  * blanking all the lines still associated. */
 void rewriteConfigRemoveOrphaned(struct rewriteConfigState *state) {
@@ -1872,7 +1893,7 @@ void rewriteConfigRemoveOrphaned(struct rewriteConfigState *state) {
 }
 
 /* This function overwrites the old configuration file with the new content.
- *
+ * 字符串覆盖源文件
  * 1) The old file length is obtained.
  * 2) If the new content is smaller, padding is added.
  * 3) A single write(2) call is used to replace the content of the file.
@@ -1931,7 +1952,7 @@ cleanup:
 /* Rewrite the configuration file at "path".
  * If the configuration file already exists, we try at best to retain comments
  * and overall structure.
- *
+ * 当前的配置写到文件中
  * Configuration parameters that are at their default value, unless already
  * explicitly included in the old configuration file, are not rewritten.
  *
@@ -2057,7 +2078,7 @@ int rewriteConfig(char *path) {
 /*-----------------------------------------------------------------------------
  * CONFIG command entry point
  *----------------------------------------------------------------------------*/
-
+/* client config命令的调用 */
 void configCommand(client *c) {
     /* Only allow CONFIG GET while loading. */
     if (server.loading && strcasecmp(c->argv[1]->ptr,"get")) {
