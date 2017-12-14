@@ -31,13 +31,13 @@
 
 /* ================================ MULTI/EXEC ============================== */
 
-/* Client state initialization for MULTI/EXEC */
+/* Client state initialization for MULTI/EXEC 初始化客户端状态*/
 void initClientMultiState(client *c) {
     c->mstate.commands = NULL;
     c->mstate.count = 0;
 }
 
-/* Release all the resources associated with MULTI/EXEC state */
+/* Release all the resources associated with MULTI/EXEC state 释放 MULTI/EXEC 相关的资源*/
 void freeClientMultiState(client *c) {
     int j;
 
@@ -52,7 +52,7 @@ void freeClientMultiState(client *c) {
     zfree(c->mstate.commands);
 }
 
-/* Add a new command into the MULTI commands queue */
+/* Add a new command into the MULTI commands queue 添加新命令到MULTI命令队列*/
 void queueMultiCommand(client *c) {
     multiCmd *mc;
     int j;
@@ -69,6 +69,7 @@ void queueMultiCommand(client *c) {
     c->mstate.count++;
 }
 
+// 撤销事务操作
 void discardTransaction(client *c) {
     freeClientMultiState(c);
     initClientMultiState(c);
@@ -77,12 +78,15 @@ void discardTransaction(client *c) {
 }
 
 /* Flag the transacation as DIRTY_EXEC so that EXEC will fail.
- * Should be called every time there is an error while queueing a command. */
+ * Should be called every time there is an error while queueing a command. 
+    标记事务为脏，导致该事务执行失败。调用与命令插入队列失败时
+ */
 void flagTransaction(client *c) {
     if (c->flags & CLIENT_MULTI)
         c->flags |= CLIENT_DIRTY_EXEC;
 }
 
+// 加入 MULTI 命令
 void multiCommand(client *c) {
     if (c->flags & CLIENT_MULTI) {
         addReplyError(c,"MULTI calls can not be nested");
@@ -92,17 +96,21 @@ void multiCommand(client *c) {
     addReply(c,shared.ok);
 }
 
+// 撤销命令
 void discardCommand(client *c) {
     if (!(c->flags & CLIENT_MULTI)) {
         addReplyError(c,"DISCARD without MULTI");
         return;
     }
+    // 先撤销事务
     discardTransaction(c);
     addReply(c,shared.ok);
 }
 
 /* Send a MULTI command to all the slaves and AOF file. Check the execCommand
- * implementation for more information. */
+ * implementation for more information. 
+    给所有slaves和AOF文件发送 MULTI 命令
+ */
 void execCommandPropagateMulti(client *c) {
     robj *multistring = createStringObject("MULTI",5);
 
@@ -111,6 +119,7 @@ void execCommandPropagateMulti(client *c) {
     decrRefCount(multistring);
 }
 
+// 客户端执行命令
 void execCommand(client *c) {
     int j;
     robj **orig_argv;
@@ -125,8 +134,8 @@ void execCommand(client *c) {
     }
 
     /* Check if we need to abort the EXEC because:
-     * 1) Some WATCHed key was touched.
-     * 2) There was a previous error while queueing commands.
+     * 1) Some WATCHed key was touched. touch的key不能执行命令
+     * 2) There was a previous error while queueing commands.已被标记为脏
      * A failed EXEC in the first case returns a multi bulk nil object
      * (technically it is not an error but a special behavior), while
      * in the second an EXECABORT error is returned. */
@@ -197,23 +206,25 @@ handle_monitor:
 }
 
 /* ===================== WATCH (CAS alike for MULTI/EXEC) ===================
- *
+ * CAS算法，乐观锁，多个线程修改同一个值，只有一个成功，其他全失败
  * The implementation uses a per-DB hash table mapping keys to list of clients
  * WATCHing those keys, so that given a key that is going to be modified
  * we can mark all the associated clients as dirty.
- *
+ * 每个db都有一个key到client链表的map映射。给定一个key，标记所有相关的客户端为dirty
  * Also every client contains a list of WATCHed keys so that's possible to
- * un-watch such keys when the client is freed or when UNWATCH is called. */
+ * un-watch such keys when the client is freed or when UNWATCH is called. 
+    每个client也有一个监听keys的链表，可以在释放client时或调用不监听时使用
+ */
 
 /* In the client->watched_keys list we need to use watchedKey structures
  * as in order to identify a key in Redis we need both the key name and the
- * DB */
+ * DB  监听key的struct，每个key对应一个db */
 typedef struct watchedKey {
     robj *key;
     redisDb *db;
 } watchedKey;
 
-/* Watch for the specified key */
+/* Watch for the specified key  监听指定的key */
 void watchForKey(client *c, robj *key) {
     list *clients = NULL;
     listIter li;
@@ -244,7 +255,7 @@ void watchForKey(client *c, robj *key) {
 }
 
 /* Unwatch all the keys watched by this client. To clean the EXEC dirty
- * flag is up to the caller. */
+ * flag is up to the caller. 取消client所监听的所有key*/
 void unwatchAllKeys(client *c) {
     listIter li;
     listNode *ln;
@@ -272,7 +283,7 @@ void unwatchAllKeys(client *c) {
 }
 
 /* "Touch" a key, so that if this key is being WATCHed by some client the
- * next EXEC will fail. */
+ * next EXEC will fail. 意思是key被监听的client，执行下一条命令会失败。*/
 void touchWatchedKey(redisDb *db, robj *key) {
     list *clients;
     listIter li;
@@ -287,7 +298,8 @@ void touchWatchedKey(redisDb *db, robj *key) {
     listRewind(clients,&li);
     while((ln = listNext(&li))) {
         client *c = listNodeValue(ln);
-
+        
+        // client标记为CLIENT_DIRTY_CAS
         c->flags |= CLIENT_DIRTY_CAS;
     }
 }
@@ -295,7 +307,7 @@ void touchWatchedKey(redisDb *db, robj *key) {
 /* On FLUSHDB or FLUSHALL all the watched keys that are present before the
  * flush but will be deleted as effect of the flushing operation should
  * be touched. "dbid" is the DB that's getting the flush. -1 if it is
- * a FLUSHALL operation (all the DBs flushed). */
+ * a FLUSHALL operation (all the DBs flushed). 把所有监听的key都touch一遍*/
 void touchWatchedKeysOnFlush(int dbid) {
     listIter li1, li2;
     listNode *ln;
@@ -319,6 +331,7 @@ void touchWatchedKeysOnFlush(int dbid) {
     }
 }
 
+// 监听client的key的命令
 void watchCommand(client *c) {
     int j;
 
@@ -331,6 +344,7 @@ void watchCommand(client *c) {
     addReply(c,shared.ok);
 }
 
+// 取消监听client的key的命令
 void unwatchCommand(client *c) {
     unwatchAllKeys(c);
     c->flags &= (~CLIENT_DIRTY_CAS);
