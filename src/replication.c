@@ -1,5 +1,5 @@
 /* Asynchronous replication implementation.
- *
+ * 主从数据复制实现
  * Copyright (c) 2009-2012, Salvatore Sanfilippo <antirez at gmail dot com>
  * All rights reserved.
  *
@@ -73,7 +73,7 @@ char *replicationGetSlaveName(client *c) {
 }
 
 /* ---------------------------------- MASTER -------------------------------- */
-
+// 创建Backlog的buffer
 void createReplicationBacklog(void) {
     serverAssert(server.repl_backlog == NULL);
     server.repl_backlog = zmalloc(server.repl_backlog_size);
@@ -91,7 +91,9 @@ void createReplicationBacklog(void) {
  * server.repl_backlog_size and to resize the buffer and setup it so that
  * it contains the same data as the previous one (possibly less data, but
  * the most recent bytes, or the same data and more free space in case the
- * buffer is enlarged). */
+ * buffer is enlarged). 
+   调整备份日志的大小，在复制运行时调用
+ */
 void resizeReplicationBacklog(long long newsize) {
     if (newsize < CONFIG_REPL_BACKLOG_MIN_SIZE)
         newsize = CONFIG_REPL_BACKLOG_MIN_SIZE;
@@ -113,6 +115,7 @@ void resizeReplicationBacklog(long long newsize) {
     }
 }
 
+// 释放复制的备份日志
 void freeReplicationBacklog(void) {
     serverAssert(listLength(server.slaves) == 0);
     zfree(server.repl_backlog);
@@ -122,7 +125,9 @@ void freeReplicationBacklog(void) {
 /* Add data to the replication backlog.
  * This function also increments the global replication offset stored at
  * server.master_repl_offset, because there is no case where we want to feed
- * the backlog without incrementing the offset. */
+ * the backlog without incrementing the offset. 
+    备份日志添加数据,master_repl_offset会增大
+ */
 void feedReplicationBacklog(void *ptr, size_t len) {
     unsigned char *p = ptr;
 
@@ -149,7 +154,9 @@ void feedReplicationBacklog(void *ptr, size_t len) {
 }
 
 /* Wrapper for feedReplicationBacklog() that takes Redis string objects
- * as input. */
+ * as input. 
+    封装feedReplicationBacklog()函数，可以接受Redis 字符串对象
+ */
 void feedReplicationBacklogWithObject(robj *o) {
     char llstr[LONG_STR_SIZE];
     void *p;
@@ -169,7 +176,9 @@ void feedReplicationBacklogWithObject(robj *o) {
  * as well. This function is used if the instance is a master: we use
  * the commands received by our clients in order to create the replication
  * stream. Instead if the instance is a slave and has sub-slaves attached,
- * we use replicationFeedSlavesFromMaster() */
+ * we use replicationFeedSlavesFromMaster() 
+    复制数据到从数据库
+ */
 void replicationFeedSlaves(list *slaves, int dictid, robj **argv, int argc) {
     listNode *ln;
     listIter li;
@@ -273,7 +282,9 @@ void replicationFeedSlaves(list *slaves, int dictid, robj **argv, int argc) {
 }
 
 /* This function is used in order to proxy what we receive from our master
- * to our sub-slaves. */
+ * to our sub-slaves. 
+   将主数据库收到的数据同步到从数据库
+ */
 #include <ctype.h>
 void replicationFeedSlavesFromMasterStream(list *slaves, char *buf, size_t buflen) {
     listNode *ln;
@@ -300,6 +311,7 @@ void replicationFeedSlavesFromMasterStream(list *slaves, char *buf, size_t bufle
     }
 }
 
+// 复制数据到monitor监听客户端
 void replicationFeedMonitors(client *c, list *monitors, int dictid, robj **argv, int argc) {
     listNode *ln;
     listIter li;
@@ -340,7 +352,9 @@ void replicationFeedMonitors(client *c, list *monitors, int dictid, robj **argv,
 }
 
 /* Feed the slave 'c' with the replication backlog starting from the
- * specified 'offset' up to the end of the backlog. */
+ * specified 'offset' up to the end of the backlog. 
+    slave从客户端添加backlog，从offest偏移量开始
+ */
 long long addReplyReplicationBacklog(client *c, long long offset) {
     long long j, skip, len;
 
@@ -394,7 +408,7 @@ long long addReplyReplicationBacklog(client *c, long long offset) {
 /* Return the offset to provide as reply to the PSYNC command received
  * from the slave. The returned value is only valid immediately after
  * the BGSAVE process started and before executing any other command
- * from clients. */
+ * from clients.  */
 long long getPsyncInitialOffset(void) {
     return server.master_repl_offset;
 }
@@ -414,7 +428,9 @@ long long getPsyncInitialOffset(void) {
  *
  * Normally this function should be called immediately after a successful
  * BGSAVE for replication was started, or when there is one already in
- * progress that we attached our slave to. */
+ * progress that we attached our slave to. 
+   设置slave全部重新同步的setup
+ */
 int replicationSetupSlaveForFullResync(client *slave, long long offset) {
     char buf[128];
     int buflen;
@@ -443,7 +459,9 @@ int replicationSetupSlaveForFullResync(client *slave, long long offset) {
  * master receiving a request for partial resynchronization.
  *
  * On success return C_OK, otherwise C_ERR is returned and we proceed
- * with the usual full resync. */
+ * with the usual full resync. 
+    master尝试部分同步
+ */
 int masterTryPartialResynchronization(client *c) {
     long long psync_offset, psync_len;
     char *master_replid = c->argv[1]->ptr;
@@ -559,7 +577,9 @@ need_full_resync:
  * 2) Flush the Lua scripting script cache if the BGSAVE was actually
  *    started.
  *
- * Returns C_OK on success or C_ERR otherwise. */
+ * Returns C_OK on success or C_ERR otherwise. 
+    开始后台备份数据
+ */
 int startBgsaveForReplication(int mincapa) {
     int retval;
     int socket_target = server.repl_diskless_sync && (mincapa & SLAVE_CAPA_EOF);
@@ -623,7 +643,7 @@ int startBgsaveForReplication(int mincapa) {
     return retval;
 }
 
-/* SYNC and PSYNC command implemenation. */
+/* SYNC and PSYNC command implemenation. 同步命令函数*/
 void syncCommand(client *c) {
     /* ignore SYNC if already slave or in monitor mode */
     if (c->flags & CLIENT_SLAVE) return;
@@ -772,7 +792,9 @@ void syncCommand(client *c) {
  *
  * In the future the same command can be used in order to configure
  * the replication to initiate an incremental replication instead of a
- * full resync. */
+ * full resync. 
+    从client配置复制运行参数命令函数
+ */
 void replconfCommand(client *c) {
     int j;
 
@@ -851,7 +873,9 @@ void replconfCommand(client *c) {
  * 2) Make sure the writable event is re-installed, since calling the SYNC
  *    command disables it, so that we can accumulate output buffer without
  *    sending it to the slave.
- * 3) Update the count of good slaves. */
+ * 3) Update the count of good slaves. 
+    从数据库online函数，在收到初始化同步的RDB文件后调用
+ */
 void putSlaveOnline(client *slave) {
     slave->replstate = SLAVE_STATE_ONLINE;
     slave->repl_put_online_on_ack = 0;
@@ -867,6 +891,7 @@ void putSlaveOnline(client *slave) {
         replicationGetSlaveName(slave));
 }
 
+// 给slave发送RDB bulk数据
 void sendBulkToSlave(aeEventLoop *el, int fd, void *privdata, int mask) {
     client *slave = privdata;
     UNUSED(el);
@@ -936,7 +961,9 @@ void sendBulkToSlave(aeEventLoop *el, int fd, void *privdata, int mask) {
  * The argument bgsaveerr is C_OK if the background saving succeeded
  * otherwise C_ERR is passed to the function.
  * The 'type' argument is the type of the child that terminated
- * (if it had a disk or socket target). */
+ * (if it had a disk or socket target). 
+   后台备份进程快要执行成功时调用，用于更新slave客户端
+ */
 void updateSlavesWaitingBgsave(int bgsaveerr, int type) {
     listNode *ln;
     int startbgsave = 0;
@@ -1040,7 +1067,9 @@ void shiftReplicationId(void) {
 /* ----------------------------------- SLAVE -------------------------------- */
 
 /* Returns 1 if the given replication state is a handshake state,
- * 0 otherwise. */
+ * 0 otherwise. 
+    判断slave是否处于handshake状态
+ */
 int slaveIsInHandshakeState(void) {
     return server.repl_state >= REPL_STATE_RECEIVE_PONG &&
            server.repl_state <= REPL_STATE_RECEIVE_PSYNC;
@@ -1053,7 +1082,9 @@ int slaveIsInHandshakeState(void) {
  *
  * The function is called in two contexts: while we flush the current
  * data with emptyDb(), and while we load the new data received as an
- * RDB file from the master. */
+ * RDB file from the master. 
+    发送一个字节给master，避免time out
+ */
 void replicationSendNewlineToMaster(void) {
     static time_t newline_sent;
     if (time(NULL) != newline_sent) {
@@ -1065,7 +1096,9 @@ void replicationSendNewlineToMaster(void) {
 }
 
 /* Callback used by emptyDb() while flushing away old data to load
- * the new dataset received by the master. */
+ * the new dataset received by the master. 
+    emptyDb()调用的回调，移除旧数据
+ */
 void replicationEmptyDbCallback(void *privdata) {
     UNUSED(privdata);
     replicationSendNewlineToMaster();
@@ -1073,7 +1106,9 @@ void replicationEmptyDbCallback(void *privdata) {
 
 /* Once we have a link with the master and the synchroniziation was
  * performed, this function materializes the master client we store
- * at server.master, starting from the specified file descriptor. */
+ * at server.master, starting from the specified file descriptor. 
+    将server.master初始化
+ */
 void replicationCreateMasterClient(int fd, int dbid) {
     server.master = createClient(fd);
     server.master->flags |= CLIENT_MASTER;
@@ -1101,7 +1136,7 @@ void restartAOF() {
     }
 }
 
-/* Asynchronously read the SYNC payload we receive from a master */
+/* Asynchronously read the SYNC payload we receive from a master 同步读取从master收到的SYNC数据*/
 #define REPL_MAX_WRITTEN_BEFORE_FSYNC (1024*1024*8) /* 8 MB */
 void readSyncBulkPayload(aeEventLoop *el, int fd, void *privdata, int mask) {
     char buf[4096];
@@ -1305,9 +1340,10 @@ error:
 
 /* Send a synchronous command to the master. Used to send AUTH and
  * REPLCONF commands before starting the replication with SYNC.
- *
+ * 
  * The command returns an sds string representing the result of the
  * operation. On error the first byte is a "-".
+    给master发送同步命令，有认证信息和配置信息
  */
 #define SYNC_CMD_READ (1<<0)
 #define SYNC_CMD_WRITE (1<<1)
@@ -1413,6 +1449,7 @@ char *sendSynchronousCommand(int flags, int fd, ...) {
 #define PSYNC_FULLRESYNC 3
 #define PSYNC_NOT_SUPPORTED 4
 #define PSYNC_TRY_LATER 5
+// 尝试在重连masters时部分同步
 int slaveTryPartialResynchronization(int fd, int read_reply) {
     char *psync_replid;
     char psync_offset[32];
@@ -1572,7 +1609,9 @@ int slaveTryPartialResynchronization(int fd, int read_reply) {
 }
 
 /* This handler fires when the non blocking connect was able to
- * establish a connection with the master. */
+ * establish a connection with the master. 
+    和master同步，保持非阻塞连接
+ */
 void syncWithMaster(aeEventLoop *el, int fd, void *privdata, int mask) {
     char tmpfile[256], *err = NULL;
     int dfd = -1, maxtries = 5;
@@ -1599,7 +1638,7 @@ void syncWithMaster(aeEventLoop *el, int fd, void *privdata, int mask) {
         goto error;
     }
 
-    /* Send a PING to check the master is able to reply without errors. */
+    /* Send a PING to check the master is able to reply without errors. 发送ping到master*/
     if (server.repl_state == REPL_STATE_CONNECTING) {
         serverLog(LL_NOTICE,"Non blocking connect for SYNC fired the event.");
         /* Delete the writable event so that the readable event remains
@@ -1613,7 +1652,7 @@ void syncWithMaster(aeEventLoop *el, int fd, void *privdata, int mask) {
         return;
     }
 
-    /* Receive the PONG command. */
+    /* Receive the PONG command. 收到pong*/
     if (server.repl_state == REPL_STATE_RECEIVE_PONG) {
         err = sendSynchronousCommand(SYNC_CMD_READ,fd,NULL);
 
@@ -1637,7 +1676,7 @@ void syncWithMaster(aeEventLoop *el, int fd, void *privdata, int mask) {
         server.repl_state = REPL_STATE_SEND_AUTH;
     }
 
-    /* AUTH with the master if required. */
+    /* AUTH with the master if required. 发送认证信息*/
     if (server.repl_state == REPL_STATE_SEND_AUTH) {
         if (server.masterauth) {
             err = sendSynchronousCommand(SYNC_CMD_WRITE,fd,"AUTH",server.masterauth,NULL);
@@ -1649,7 +1688,7 @@ void syncWithMaster(aeEventLoop *el, int fd, void *privdata, int mask) {
         }
     }
 
-    /* Receive AUTH reply. */
+    /* Receive AUTH reply. 收到认证回复*/
     if (server.repl_state == REPL_STATE_RECEIVE_AUTH) {
         err = sendSynchronousCommand(SYNC_CMD_READ,fd,NULL);
         if (err[0] == '-') {
@@ -1851,6 +1890,7 @@ write_error: /* Handle sendSynchronousCommand(SYNC_CMD_WRITE) errors. */
     goto error;
 }
 
+// 连接master
 int connectWithMaster(void) {
     int fd;
 
@@ -1879,6 +1919,7 @@ int connectWithMaster(void) {
 /* This function can be called when a non blocking connection is currently
  * in progress to undo it.
  * Never call this function directly, use cancelReplicationHandshake() instead.
+    撤销连接master，不要直接调用，用cancelRelicationHandshake()替代
  */
 void undoConnectWithMaster(void) {
     int fd = server.repl_transfer_s;
@@ -1890,6 +1931,7 @@ void undoConnectWithMaster(void) {
 
 /* Abort the async download of the bulk dataset while SYNC-ing with master.
  * Never call this function directly, use cancelReplicationHandshake() instead.
+    中止与master的bulk数据同步
  */
 void replicationAbortSyncTransfer(void) {
     serverAssert(server.repl_state == REPL_STATE_TRANSFER);
@@ -1973,7 +2015,9 @@ void replicationUnsetMaster(void) {
 }
 
 /* This function is called when the slave lose the connection with the
- * master into an unexpected way. */
+ * master into an unexpected way. 
+    处理与master异常连接断开
+ */
 void replicationHandleMasterDisconnection(void) {
     server.master = NULL;
     server.repl_state = REPL_STATE_CONNECT;
@@ -2028,7 +2072,9 @@ void slaveofCommand(client *c) {
 
 /* ROLE command: provide information about the role of the instance
  * (master or slave) and additional information related to replication
- * in an easy to process format. */
+ * in an easy to process format. 
+    输出当前客户端的信息，包括是master还是slaved等
+ */
 void roleCommand(client *c) {
     if (server.masterhost == NULL) {
         listIter li;
@@ -2084,7 +2130,9 @@ void roleCommand(client *c) {
 
 /* Send a REPLCONF ACK command to the master to inform it about the current
  * processed offset. If we are not connected with a master, the command has
- * no effects. */
+ * no effects. 
+    给master发送ACK命令，告知当前处理的偏移量
+ */
 void replicationSendAck(void) {
     client *c = server.master;
 
@@ -2103,7 +2151,9 @@ void replicationSendAck(void) {
 /* In order to implement partial synchronization we need to be able to cache
  * our master's client structure after a transient disconnection.
  * It is cached into server.cached_master and flushed away using the following
- * functions. */
+ * functions. 
+    为了实现部分同步，在短暂断开连接时，需要缓存master的结构体信息，存在server.cached_master中
+ */
 
 /* This function is called by freeClient() in order to cache the master
  * client structure instead of destryoing it. freeClient() will return
@@ -2117,6 +2167,7 @@ void replicationSendAck(void) {
  *
  * replicationResurrectCachedMaster() that is used after a successful PSYNC
  * handshake in order to reactivate the cached master.
+    复制master的信息
  */
 void replicationCacheMaster(client *c) {
     serverAssert(server.master != NULL && server.cached_master == NULL);
@@ -2161,7 +2212,8 @@ void replicationCacheMaster(client *c) {
  * Assuming this instance was previously the master instance of the new master,
  * the new master will accept its replication ID, and potentiall also the
  * current offset if no data was lost during the failover. So we use our
- * current replication ID and offset in order to synthesize a cached master. */
+ * current replication ID and offset in order to synthesize a cached master. 
+ */
 void replicationCacheMasterUsingMyself(void) {
     /* The master client we create can be set to any DBID, because
      * the new master will start its replication stream with SELECT. */
@@ -2179,7 +2231,9 @@ void replicationCacheMasterUsingMyself(void) {
 }
 
 /* Free a cached master, called when there are no longer the conditions for
- * a partial resync on reconnection. */
+ * a partial resync on reconnection. 
+    释放缓存的信息，在重连后不会进行部分同步时
+ */
 void replicationDiscardCachedMaster(void) {
     if (server.cached_master == NULL) return;
 
@@ -2194,7 +2248,9 @@ void replicationDiscardCachedMaster(void) {
  *
  * This function is called when successfully setup a partial resynchronization
  * so the stream of data that we'll receive will start from were this
- * master left. */
+ * master left. 
+    将缓存的信息转换成当前的master
+ */
 void replicationResurrectCachedMaster(int newfd) {
     server.master = server.cached_master;
     server.cached_master = NULL;
@@ -2227,7 +2283,9 @@ void replicationResurrectCachedMaster(int newfd) {
 
 /* This function counts the number of slaves with lag <= min-slaves-max-lag.
  * If the option is active, the server will prevent writes if there are not
- * enough connected slaves with the specified lag (or less). */
+ * enough connected slaves with the specified lag (or less). 
+    更新slave数目
+ */
 void refreshGoodSlavesCount(void) {
     listIter li;
     listNode *ln;
