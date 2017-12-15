@@ -97,6 +97,7 @@ static const rio rioBufferIO = {
     { { NULL, 0 } } /* union for io-specific vars */
 };
 
+// 初始化一个io buffer
 void rioInitWithBuffer(rio *r, sds s) {
     *r = rioBufferIO;
     r->io.buffer.ptr = s;
@@ -115,6 +116,7 @@ static size_t rioFileWrite(rio *r, const void *buf, size_t len) {
     if (r->io.file.autosync &&
         r->io.file.buffered >= r->io.file.autosync)
     {
+        // 判断是否需要同步
         fflush(r->io.file.fp);
         aof_fsync(fileno(r->io.file.fp));
         r->io.file.buffered = 0;
@@ -150,6 +152,7 @@ static const rio rioFileIO = {
     { { NULL, 0 } } /* union for io-specific vars */
 };
 
+// 初始化 io file
 void rioInitWithFile(rio *r, FILE *fp) {
     *r = rioFileIO;
     r->io.file.fp = fp;
@@ -187,7 +190,9 @@ static size_t rioFdsetWrite(rio *r, const void *buf, size_t len) {
 
     /* Write in little chunchs so that when there are big writes we
      * parallelize while the kernel is sending data in background to
-     * the TCP socket. */
+     * the TCP socket. 
+        每次写1024的小块，当需要写大块时，可以同时发送给多个socket
+     */
     while(len) {
         size_t count = len < 1024 ? len : 1024;
         int broken = 0;
@@ -263,6 +268,7 @@ static const rio rioFdsetIO = {
     { { NULL, 0 } } /* union for io-specific vars */
 };
 
+// 初始化 io socket结构体
 void rioInitWithFdset(rio *r, int *fds, int numfds) {
     int j;
 
@@ -286,7 +292,9 @@ void rioFreeFdset(rio *r) {
 /* ---------------------------- Generic functions ---------------------------- */
 
 /* This function can be installed both in memory and file streams when checksum
- * computation is needed. */
+ * computation is needed. 
+    crc64算法生成checksum
+ */
 void rioGenericUpdateChecksum(rio *r, const void *buf, size_t len) {
     r->cksum = crc64(r->cksum,buf,len);
 }
@@ -298,7 +306,9 @@ void rioGenericUpdateChecksum(rio *r, const void *buf, size_t len) {
  * This feature is useful in a few contexts since when we rely on OS write
  * buffers sometimes the OS buffers way too much, resulting in too many
  * disk I/O concentrated in very little time. When we fsync in an explicit
- * way instead the I/O pressure is more distributed across time. */
+ * way instead the I/O pressure is more distributed across time. 
+    最小字节同步，默认为0
+ */
 void rioSetAutoSync(rio *r, off_t bytes) {
     serverAssert(r->read == rioFileIO.read);
     r->io.file.autosync = bytes;
@@ -307,7 +317,9 @@ void rioSetAutoSync(rio *r, off_t bytes) {
 /* --------------------------- Higher level interface --------------------------
  *
  * The following higher level functions use lower level rio.c functions to help
- * generating the Redis protocol for the Append Only File. */
+ * generating the Redis protocol for the Append Only File. 
+    rio写入不同数据的方法，底层调用rioWrite
+ */
 
 /* Write multi bulk count in the format: "*<count>\r\n". */
 size_t rioWriteBulkCount(rio *r, char prefix, int count) {
