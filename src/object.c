@@ -37,7 +37,7 @@
 #endif
 
 /* ===================== Creation and parsing of objects ==================== */
-
+// 创建robj对象的方法
 robj *createObject(int type, void *ptr) {
     robj *o = zmalloc(sizeof(*o));
     o->type = type;
@@ -66,6 +66,7 @@ robj *createObject(int type, void *ptr) {
  * robj *myobject = makeObjectShared(createObject(...));
  *
  */
+ //生成全局共享对象
 robj *makeObjectShared(robj *o) {
     serverAssert(o->refcount == 1);
     o->refcount = OBJ_SHARED_REFCOUNT;
@@ -74,6 +75,7 @@ robj *makeObjectShared(robj *o) {
 
 /* Create a string object with encoding OBJ_ENCODING_RAW, that is a plain
  * string object where o->ptr points to a proper sds string. */
+ //创建raw 字符串对象
 robj *createRawStringObject(const char *ptr, size_t len) {
     return createObject(OBJ_STRING, sdsnewlen(ptr,len));
 }
@@ -81,6 +83,7 @@ robj *createRawStringObject(const char *ptr, size_t len) {
 /* Create a string object with encoding OBJ_ENCODING_EMBSTR, that is
  * an object where the sds string is actually an unmodifiable string
  * allocated in the same chunk as the object itself. */
+ // 创建EMBSTR编码字符串
 robj *createEmbeddedStringObject(const char *ptr, size_t len) {
     robj *o = zmalloc(sizeof(robj)+sizeof(struct sdshdr8)+len+1);
     struct sdshdr8 *sh = (void*)(o+1);
@@ -239,6 +242,7 @@ robj *createModuleObject(moduleType *mt, void *value) {
     return createObject(OBJ_MODULE,mv);
 }
 
+// 释放字符串对象
 void freeStringObject(robj *o) {
     if (o->encoding == OBJ_ENCODING_RAW) {
         sdsfree(o->ptr);
@@ -303,10 +307,12 @@ void freeModuleObject(robj *o) {
     zfree(mv);
 }
 
+// 递增robj的引用计数
 void incrRefCount(robj *o) {
     if (o->refcount != OBJ_SHARED_REFCOUNT) o->refcount++;
 }
 
+// 递减robj的引用计数，如果为1，则释放该对象
 void decrRefCount(robj *o) {
     if (o->refcount == 1) {
         switch(o->type) {
@@ -371,7 +377,7 @@ int isObjectRepresentableAsLongLong(robj *o, long long *llval) {
     }
 }
 
-/* Try to encode a string object in order to save space */
+/* Try to encode a string object in order to save space 尝试encode一个string对象，以节省空间 */
 robj *tryObjectEncoding(robj *o) {
     long value;
     sds s = o->ptr;
@@ -380,22 +386,27 @@ robj *tryObjectEncoding(robj *o) {
     /* Make sure this is a string object, the only type we encode
      * in this function. Other types use encoded memory efficient
      * representations but are handled by the commands implementing
-     * the type. */
+     * the type. 
+     */
+    // 检查类型是否是字符串
     serverAssertWithInfo(NULL,o,o->type == OBJ_STRING);
 
     /* We try some specialized encoding only for objects that are
      * RAW or EMBSTR encoded, in other words objects that are still
      * in represented by an actually array of chars. */
+     // 检查是否已经encode
     if (!sdsEncodedObject(o)) return o;
 
     /* It's not safe to encode shared objects: shared objects can be shared
      * everywhere in the "object space" of Redis and may end in places where
      * they are not handled. We handle them only as values in the keyspace. */
+     // 当前持有该字符串对象的仅有一个线程
      if (o->refcount > 1) return o;
 
     /* Check if we can represent this string as a long integer.
      * Note that we are sure that a string larger than 20 chars is not
      * representable as a 32 nor 64 bit integer. */
+     // 尝试用long整数替代string
     len = sdslen(s);
     if (len <= 20 && string2l(s,len,&value)) {
         /* This object is encodable as a long. Try to use a shared object.
@@ -422,6 +433,7 @@ robj *tryObjectEncoding(robj *o) {
      * try the EMBSTR encoding which is more efficient.
      * In this representation the object and the SDS string are allocated
      * in the same chunk of memory to save space and cache misses. */
+     // 否则EMBSTR格式
     if (len <= OBJ_ENCODING_EMBSTR_SIZE_LIMIT) {
         robj *emb;
 
@@ -443,6 +455,7 @@ robj *tryObjectEncoding(robj *o) {
     if (o->encoding == OBJ_ENCODING_RAW &&
         sdsavail(s) > len/10)
     {
+        // 无法encode，移除多余的空格
         o->ptr = sdsRemoveFreeSpace(o->ptr);
     }
 
@@ -451,15 +464,17 @@ robj *tryObjectEncoding(robj *o) {
 }
 
 /* Get a decoded version of an encoded object (returned as a new object).
- * If the object is already raw-encoded just increment the ref count. */
+ * If the object is already raw-encoded just increment the ref count. 
+ 获取解码后的robj对象（新对象）
+ */
 robj *getDecodedObject(robj *o) {
     robj *dec;
 
     if (sdsEncodedObject(o)) {
-        incrRefCount(o);
+        incrRefCount(o);// 增加计数
         return o;
     }
-    if (o->type == OBJ_STRING && o->encoding == OBJ_ENCODING_INT) {
+    if (o->type == OBJ_STRING && o->encoding == OBJ_ENCODING_INT) {// 用长整数表示的string
         char buf[32];
 
         ll2string(buf,32,(long)o->ptr);
@@ -993,6 +1008,7 @@ sds getMemoryDoctorReport(void) {
 
 /* This is a helper function for the OBJECT command. We need to lookup keys
  * without any modification of LRU or other parameters. */
+ // 查找对象命令
 robj *objectCommandLookup(client *c, robj *key) {
     dictEntry *de;
 
@@ -1008,7 +1024,9 @@ robj *objectCommandLookupOrReply(client *c, robj *key, robj *reply) {
 }
 
 /* Object command allows to inspect the internals of an Redis Object.
- * Usage: OBJECT <refcount|encoding|idletime> <key> */
+ * Usage: OBJECT <refcount|encoding|idletime> <key> 
+ 对象相关命令
+ */
 void objectCommand(client *c) {
     robj *o;
 
@@ -1044,7 +1062,9 @@ void objectCommand(client *c) {
 /* The memory command will eventually be a complete interface for the
  * memory introspection capabilities of Redis.
  *
- * Usage: MEMORY usage <key> */
+ * Usage: MEMORY usage <key> 
+ 检查内存使用情况命令
+ */
 void memoryCommand(client *c) {
     robj *o;
 
