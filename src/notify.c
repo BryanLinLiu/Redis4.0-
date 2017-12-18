@@ -60,10 +60,12 @@ int keyspaceEventsStringToFlags(char *classes) {
     return flags;
 }
 
-/* This function does exactly the revese of the function above: it gets 和上一个函数刚好相反
+/* This function does exactly the revese of the function above: it gets 
  * as input an integer with the xored flags and returns a string representing
  * the selected classes. The string returned is an sds string that needs to
- * be released with sdsfree(). */
+ * be released with sdsfree(). 
+  整型flag转换为字符串
+ */
 sds keyspaceEventsFlagsToString(int flags) {
     sds res;
 
@@ -91,7 +93,9 @@ sds keyspaceEventsFlagsToString(int flags) {
  *
  * 'event' is a C string representing the event name.
  * 'key' is a Redis object representing the key name.
- * 'dbid' is the database ID where the key lives.  */
+ * 'dbid' is the database ID where the key lives.  
+  发送key通知
+ */
 void notifyKeyspaceEvent(int type, char *event, robj *key, int dbid) {
     sds chan;
     robj *chanobj, *eventobj;
