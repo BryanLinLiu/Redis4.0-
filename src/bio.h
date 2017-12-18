@@ -36,7 +36,8 @@ time_t bioOlderJobOfType(int type);
 void bioKillThreads(void);
 
 /* Background job opcodes */
-#define BIO_CLOSE_FILE    0 /* Deferred close(2) syscall. */
-#define BIO_AOF_FSYNC     1 /* Deferred AOF fsync. */
-#define BIO_LAZY_FREE     2 /* Deferred objects freeing. */
+#define BIO_CLOSE_FILE    0 /* Deferred close(2) syscall. 文件关闭*/
+#define BIO_AOF_FSYNC     1 /* Deferred AOF fsync. AOF文件同步*/
+#define BIO_LAZY_FREE     2 /* Deferred objects freeing. 释放obj*/
+/* 后台操作为3种 */
 #define BIO_NUM_OPS       3

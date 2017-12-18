@@ -1,5 +1,5 @@
 /* Background I/O service for Redis.
- *
+ * 后台I/O服务
  * This file implements operations that we need to perform in the background.
  * Currently there is only a single operation, that is a background close(2)
  * system call. This is needed as when the process is the last owner of a
@@ -26,6 +26,7 @@
  *
  * Currently there is no way for the creator of the job to be notified about
  * the completion of the operation, this will only be added when/if needed.
+ * 定义一个代表job的结构体，以及每种job类型都有一个线程，每个线程有一个job队列
  *
  * ----------------------------------------------------------------------------
  *
@@ -61,25 +62,32 @@
 #include "server.h"
 #include "bio.h"
 
+// 3个后台线程
 static pthread_t bio_threads[BIO_NUM_OPS];
+// 每个线程的锁
 static pthread_mutex_t bio_mutex[BIO_NUM_OPS];
 static pthread_cond_t bio_newjob_cond[BIO_NUM_OPS];
 static pthread_cond_t bio_step_cond[BIO_NUM_OPS];
+// 3个job队列
 static list *bio_jobs[BIO_NUM_OPS];
 /* The following array is used to hold the number of pending jobs for every
  * OP type. This allows us to export the bioPendingJobsOfType() API that is
  * useful when the main thread wants to perform some operation that may involve
  * objects shared with the background thread. The main thread will just wait
  * that there are no longer jobs of this type to be executed before performing
- * the sensible operation. This data is also useful for reporting. */
+ * the sensible operation. This data is also useful for reporting. 
+ * 每种类型job的等待数量
+ */
 static unsigned long long bio_pending[BIO_NUM_OPS];
 
 /* This structure represents a background Job. It is only used locally to this
- * file as the API does not expose the internals at all. */
+ * file as the API does not expose the internals at all. 
+ *  后台job的结构体
+ */
 struct bio_job {
-    time_t time; /* Time at which the job was created. */
+    time_t time; /* Time at which the job was created. job的创建时间*/
     /* Job specific arguments pointers. If we need to pass more than three
-     * arguments we can just pass a pointer to a structure or alike. */
+     * arguments we can just pass a pointer to a structure or alike. job的参数指针*/
     void *arg1, *arg2, *arg3;
 };
 
@@ -93,6 +101,7 @@ void lazyfreeFreeSlotsMapFromBioThread(zskiplist *sl);
 #define REDIS_THREAD_STACK_SIZE (1024*1024*4)
 
 /* Initialize the background system, spawning the thread. */
+/* 后台I/O服务初始化 */
 void bioInit(void) {
     pthread_attr_t attr;
     pthread_t thread;
@@ -100,15 +109,17 @@ void bioInit(void) {
     int j;
 
     /* Initialization of state vars and objects */
+    /* 初始化条件变量和对象 */
     for (j = 0; j < BIO_NUM_OPS; j++) {
         pthread_mutex_init(&bio_mutex[j],NULL);
         pthread_cond_init(&bio_newjob_cond[j],NULL);
         pthread_cond_init(&bio_step_cond[j],NULL);
-        bio_jobs[j] = listCreate();
+        bio_jobs[j] = listCreate();// job队列
         bio_pending[j] = 0;
     }
 
     /* Set the stack size as by default it may be small in some system */
+    /* 设置线程栈空间大小 */
     pthread_attr_init(&attr);
     pthread_attr_getstacksize(&attr,&stacksize);
     if (!stacksize) stacksize = 1; /* The world is full of Solaris Fixes */
@@ -117,7 +128,9 @@ void bioInit(void) {
 
     /* Ready to spawn our threads. We use the single argument the thread
      * function accepts in order to pass the job ID the thread is
-     * responsible of. */
+     * responsible of. 
+     创建线程
+     */
     for (j = 0; j < BIO_NUM_OPS; j++) {
         void *arg = (void*)(unsigned long) j;
         if (pthread_create(&thread,&attr,bioProcessBackgroundJobs,arg) != 0) {
@@ -128,6 +141,7 @@ void bioInit(void) {
     }
 }
 
+/* 创建一个后台job */
 void bioCreateBackgroundJob(int type, void *arg1, void *arg2, void *arg3) {
     struct bio_job *job = zmalloc(sizeof(*job));
 
@@ -136,12 +150,13 @@ void bioCreateBackgroundJob(int type, void *arg1, void *arg2, void *arg3) {
     job->arg2 = arg2;
     job->arg3 = arg3;
     pthread_mutex_lock(&bio_mutex[type]);
-    listAddNodeTail(bio_jobs[type],job);
-    bio_pending[type]++;
-    pthread_cond_signal(&bio_newjob_cond[type]);
+    listAddNodeTail(bio_jobs[type],job);// 加到队列尾
+    bio_pending[type]++;// 等待数量递增
+    pthread_cond_signal(&bio_newjob_cond[type]); //通知有新job
     pthread_mutex_unlock(&bio_mutex[type]);
 }
 
+/* 执行后台job，入参是job类型 */
 void *bioProcessBackgroundJobs(void *arg) {
     struct bio_job *job;
     unsigned long type = (unsigned long) arg;
@@ -172,18 +187,20 @@ void *bioProcessBackgroundJobs(void *arg) {
         listNode *ln;
 
         /* The loop always starts with the lock hold. */
-        if (listLength(bio_jobs[type]) == 0) {
+        if (listLength(bio_jobs[type]) == 0) {// 没有job，则等待
             pthread_cond_wait(&bio_newjob_cond[type],&bio_mutex[type]);
             continue;
         }
         /* Pop the job from the queue. */
+        // 取第1个job
         ln = listFirst(bio_jobs[type]);
         job = ln->value;
         /* It is now possible to unlock the background system as we know have
-         * a stand alone job structure to process.*/
+         * a stand alone job structure to process.释放锁，已经取到job*/
         pthread_mutex_unlock(&bio_mutex[type]);
 
         /* Process the job accordingly to its type. */
+        // 执行job
         if (type == BIO_CLOSE_FILE) {
             close((long)job->arg1);
         } else if (type == BIO_AOF_FSYNC) {
@@ -216,6 +233,7 @@ void *bioProcessBackgroundJobs(void *arg) {
 }
 
 /* Return the number of pending jobs of the specified type. */
+/* 返回类型为type的job等待数量*/
 unsigned long long bioPendingJobsOfType(int type) {
     unsigned long long val;
     pthread_mutex_lock(&bio_mutex[type]);
@@ -234,6 +252,7 @@ unsigned long long bioPendingJobsOfType(int type) {
  * This function is useful when from another thread, we want to wait
  * a bio.c thread to do more work in a blocking way.
  */
+ /* 如果有类型为type的job在等待处理，则等到处理完一个该类型的job返回 */
 unsigned long long bioWaitStepOfType(int type) {
     unsigned long long val;
     pthread_mutex_lock(&bio_mutex[type]);
@@ -250,6 +269,7 @@ unsigned long long bioWaitStepOfType(int type) {
  * used only when it's critical to stop the threads for some reason.
  * Currently Redis does this only on crash (for instance on SIGSEGV) in order
  * to perform a fast memory check without other threads messing with memory. */
+ /* 杀死所有后台I/O线程 */
 void bioKillThreads(void) {
     int err, j;
 
