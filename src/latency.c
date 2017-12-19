@@ -2,7 +2,7 @@
  * in a Redis instance using the LATENCY command. Different latency
  * sources are monitored, like disk I/O, execution of commands, fork
  * system call, and so forth.
- *
+ * 演示监听器可以很方便的监听Redis的资源，比如磁盘I/O，命令执行和fork调用等
  * ----------------------------------------------------------------------------
  *
  * Copyright (c) 2014, Salvatore Sanfilippo <antirez at gmail dot com>
@@ -87,6 +87,7 @@ int THPGetAnonHugePagesSize(void) {
 /* Latency monitor initialization. We just need to create the dictionary
  * of time series, each time serie is craeted on demand in order to avoid
  * having a fixed list to maintain. */
+ /* 延时监听初始化 */
 void latencyMonitorInit(void) {
     server.latency_events = dictCreate(&latencyTimeSeriesDictType,NULL);
 }
@@ -95,6 +96,7 @@ void latencyMonitorInit(void) {
  * This function is usually called via latencyAddSampleIfNeeded(), that
  * is a macro that only adds the sample if the latency is higher than
  * server.latency_monitor_threshold. */
+ /* 添加事件的延时实例 */
 void latencyAddSample(char *event, mstime_t latency) {
     struct latencyTimeSeries *ts = dictFetchValue(server.latency_events,event);
     time_t now = time(NULL);
@@ -106,18 +108,21 @@ void latencyAddSample(char *event, mstime_t latency) {
         ts->idx = 0;
         ts->max = 0;
         memset(ts->samples,0,sizeof(ts->samples));
+        // 创建延时实例序列
         dictAdd(server.latency_events,zstrdup(event),ts);
     }
 
     /* If the previous sample is in the same second, we update our old sample
      * if this latency is > of the old one, or just return. */
+     // 前一个实例和当前同一秒，则更新前一个实例
     prev = (ts->idx + LATENCY_TS_LEN - 1) % LATENCY_TS_LEN;
     if (ts->samples[prev].time == now) {
         if (latency > ts->samples[prev].latency)
             ts->samples[prev].latency = latency;
         return;
     }
-
+    
+    // 添加新延时实例
     ts->samples[ts->idx].time = time(NULL);
     ts->samples[ts->idx].latency = latency;
     if (latency > ts->max) ts->max = latency;
@@ -131,6 +136,7 @@ void latencyAddSample(char *event, mstime_t latency) {
  *
  * Note: this is O(N) even when event_to_reset is not NULL because makes
  * the code simpler and we have a small fixed max number of events. */
+ /* 重置事件延时，删除事件 */
 int latencyResetEvent(char *event_to_reset) {
     dictIterator *di;
     dictEntry *de;
@@ -156,6 +162,7 @@ int latencyResetEvent(char *event_to_reset) {
  * Check latency.h definition of struct latenctStat for more info.
  * If the specified event has no elements the structure is populate with
  * zero values. */
+ /* 分析延时结果，存进延时数据统计中 */
 void analyzeLatencyForEvent(char *event, struct latencyStats *ls) {
     struct latencyTimeSeries *ts = dictFetchValue(server.latency_events,event);
     int j;
@@ -213,6 +220,7 @@ void analyzeLatencyForEvent(char *event, struct latencyStats *ls) {
 }
 
 /* Create a human readable report of latency events for this Redis instance. */
+/* 返回延时报告 */
 sds createLatencyReport(void) {
     sds report = sdsempty();
     int advise_better_vm = 0;       /* Better virtual machines. */
